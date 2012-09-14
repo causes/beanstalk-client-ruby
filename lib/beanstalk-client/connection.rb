@@ -22,6 +22,8 @@ require 'set'
 require 'thread'
 
 module Beanstalk
+  INITIAL_TUBE = 'default' # New connections use and watch this tube
+
   class Connection
     attr_reader :addr
 
@@ -31,7 +33,7 @@ module Beanstalk
       @waiting = false
       @addr = addr
       connect
-      @last_used = 'default'
+      @last_used = INITIAL_TUBE
       @watch_list = [@last_used]
       self.use(default_tube) if default_tube
       self.watch(default_tube) if default_tube
@@ -253,7 +255,7 @@ module Beanstalk
 
     def initialize(addrs, default_tube=nil)
       @addrs = addrs
-      @watch_list = ['default']
+      @watch_list = [INITIAL_TUBE]
       @default_tube=default_tube
       @watch_list = [default_tube] if default_tube
       connect()
