@@ -25,9 +25,24 @@ module Beanstalk
   INITIAL_TUBE = 'default' # New connections use and watch this tube
 
   class Connection
+    class << self
+      def connections
+        @connections ||= []
+      end
+
+      def reconnect_all!
+        connections.each do |conn|
+          # Reconnect only active connections
+          conn.reconnect if conn.connected?
+        end
+      end
+    end
+
     attr_reader :addr
 
     def initialize(addr, default_tube=nil)
+      self.class.connections << self
+
       @mutex = Mutex.new
       @tube_mutex = Mutex.new
       @waiting = false
@@ -50,6 +65,24 @@ module Beanstalk
     def close
       @socket.close
       @socket = nil
+    end
+
+    def connected?
+      !!@socket
+    end
+
+    def reconnect
+      close if connected?
+      connect
+
+      # Save and reset last_used and watch_list
+      @last_used, old_last_used = INITIAL_TUBE, @last_used
+      @watch_list, old_watch_list = [@last_used], @watch_list
+
+      # Restore connection's use/watch state
+      use(old_last_used)
+      old_watch_list.each { |tube| watch(tube) }
+      ignore(INITIAL_TUBE) unless old_watch_list.include? INITIAL_TUBE
     end
 
     def put(body, pri=65536, delay=0, ttr=120)
@@ -187,7 +220,7 @@ module Beanstalk
       return @watch_list if cached
       @watch_list = interact("list-tubes-watched\r\n", :yaml)
     end
-    
+
     def pause_tube(tube, delay)
       delay = delay.to_i
       interact("pause-tube #{tube} #{delay}\r\n", %w(PAUSED))
@@ -394,7 +427,7 @@ module Beanstalk
     def peek_job(id)
       make_hash(send_to_all_conns(:peek_job, id))
     end
-    
+
     def pause_tube(tube, delay)
       send_to_all_conns(:pause_tube, tube, delay)
     end
